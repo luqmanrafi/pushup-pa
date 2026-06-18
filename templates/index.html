@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RepCount AI - Pro</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="h-screen w-full flex flex-col overflow-hidden">
+  
+  <!-- Header -->
+  <header class="w-full py-5 px-8 flex justify-between items-center border-b border-white/5 bg-zinc-950/80 backdrop-blur-md z-20">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+        <i data-lucide="activity" class="w-5 h-5 text-emerald-400"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight text-white">RepCount <span class="text-emerald-400">AI</span></h1>
+      </div>
+    </div>
+    
+    <div class="flex items-center gap-4">
+      <input type="file" id="video-upload" accept="video/mp4,video/quicktime,video/webm" class="hidden">
+      <button id="btn-upload" class="px-6 py-2.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold tracking-wide transition-all border border-white/10 flex items-center gap-2">
+        <i data-lucide="upload" class="w-4 h-4"></i>
+        <span>Upload Video</span>
+      </button>
+      
+      <button id="btn-camera" class="px-6 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] flex items-center gap-2">
+        <i id="btn-camera-icon" data-lucide="camera" class="w-4 h-4"></i>
+        <span id="btn-camera-text">Start Workout</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 p-6 lg:p-8 flex flex-col lg:flex-row gap-6 lg:gap-8 max-w-[1600px] mx-auto w-full">
+    
+    <!-- Camera Section (Center Stage) -->
+    <div class="flex-1 glass-card flex flex-col relative overflow-hidden shadow-2xl">
+      <!-- Empty State -->
+      <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center z-10 bg-zinc-900/50">
+        <div class="w-20 h-20 mb-4 rounded-full bg-zinc-800/80 flex items-center justify-center text-zinc-400">
+          <i data-lucide="video" class="w-8 h-8"></i>
+        </div>
+        <h3 class="text-xl font-bold text-zinc-200">Camera is Offline</h3>
+        <p class="text-sm text-zinc-500 mt-2">Click Start Workout or Upload a Video to begin.</p>
+      </div>
+
+      <!-- Loading State -->
+      <div id="loading-state" class="absolute inset-0 flex flex-col items-center justify-center z-20 bg-zinc-900/80 backdrop-blur-sm hidden">
+        <div class="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <h3 id="loading-title" class="text-xl font-bold text-zinc-200">Memproses Video...</h3>
+        <p id="loading-desc" class="text-sm text-zinc-500 mt-2">AI sedang menganalisis gerakan Anda.</p>
+      </div>
+
+      <!-- Video Feed -->
+      <div id="feed-container" class="absolute inset-0 w-full h-full hidden bg-black">
+        <video id="video-stream" autoplay playsinline class="w-full h-full object-contain absolute inset-0"></video>
+        <canvas id="snapshot-canvas" class="hidden"></canvas>
+        <img id="image-preview" class="w-full h-full object-contain absolute inset-0 z-10" src="" alt="Live Feed">
+        <video id="playback-video" controls class="w-full h-full object-contain absolute inset-0 z-20 hidden"></video>
+        
+        <!-- Live Badge -->
+        <div class="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
+          <span class="text-xs font-bold tracking-widest text-white uppercase">Live</span>
+        </div>
+        
+        <!-- Feedback Banner -->
+        <div id="feedback-banner" class="absolute top-4 right-4 max-w-sm px-5 py-3 rounded-2xl bg-zinc-800/90 backdrop-blur-md border border-white/10 hidden items-center gap-3 transition-all duration-300 transform scale-95 opacity-0 z-30">
+          <span id="feedback-text" class="text-sm font-bold text-white tracking-wide"></span>
+        </div>
+
+        <!-- Zoom Control -->
+        <div id="zoom-control" class="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-5 py-2.5 rounded-full border border-white/10 hidden items-center gap-4 transition-all">
+          <i data-lucide="zoom-out" class="w-4 h-4 text-zinc-400"></i>
+          <input type="range" id="zoom-slider" min="0.5" max="3" step="0.1" value="1" class="w-32 accent-emerald-500">
+          <i data-lucide="zoom-in" class="w-4 h-4 text-zinc-400"></i>
+          <span id="zoom-value" class="text-xs font-bold text-emerald-400 w-8 font-mono text-right">1.0x</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Sidebar (Right side) -->
+    <div class="w-full lg:w-[400px] flex flex-col gap-6 shrink-0">
+      
+      <!-- Big Rep Counter -->
+      <div class="glass-card p-8 flex flex-col items-center justify-center text-center relative overflow-hidden border-emerald-500/20">
+        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-cyan-500"></div>
+        <h2 id="set-indicator" class="text-sm font-bold text-zinc-400 uppercase tracking-widest mb-2">Total Reps (Set 1)</h2>
+        <div id="rep-count" class="text-8xl font-black text-white tracking-tighter">0</div>
+        <div class="mt-4 flex items-center justify-center gap-2 flex-wrap">
+            <label for="set-type" class="text-zinc-400 text-sm font-medium">Type:</label>
+            <select id="set-type" class="bg-zinc-900 border border-white/10 rounded-lg px-2 py-1 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors">
+                <option value="standard">Standard</option>
+                <option value="pyramid">Pyramid</option>
+                <option value="drop">Drop Set</option>
+            </select>
+            
+            <label for="target-input" class="text-zinc-400 text-sm font-medium ml-2">Base:</label>
+            <input type="number" id="target-input" value="15" min="1" class="w-16 bg-zinc-900 border border-white/10 rounded-lg px-2 py-1 text-white text-center text-sm focus:outline-none focus:border-emerald-500 transition-colors">
+            <span class="text-emerald-400 text-sm font-medium">Reps</span>
+        </div>
+        <button id="btn-next-set" class="mt-5 w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-bold tracking-wide transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center justify-center gap-2 hidden">
+          <i data-lucide="play-circle" class="w-4 h-4"></i>
+          <span>Mulai Set Berikutnya</span>
+        </button>
+      </div>
+
+      <!-- Realtime Metrics -->
+      <div class="glass-card p-6 flex flex-col gap-5">
+        <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1 flex items-center gap-2">
+          <i data-lucide="zap" class="w-4 h-4 text-cyan-400"></i> Live Form Metrics
+        </h3>
+        
+        <!-- State -->
+        <div class="flex justify-between items-center p-4 rounded-2xl bg-zinc-900/50 border border-white/5">
+          <span class="text-sm font-medium text-zinc-400">FSM State</span>
+          <div id="res-state" class="text-xl font-bold text-white tracking-wide">--</div>
+        </div>
+        
+        <!-- YOLO Class -->
+        <div class="flex justify-between items-center p-4 rounded-2xl bg-zinc-900/50 border border-white/5">
+          <span class="text-sm font-medium text-zinc-400">Detected Class</span>
+          <div id="res-class" class="font-mono text-xl font-bold text-cyan-400">--</div>
+        </div>
+        
+        <!-- Confidence -->
+        <div class="flex justify-between items-center p-4 rounded-2xl bg-zinc-900/50 border border-white/5">
+          <span class="text-sm font-medium text-zinc-400">AI Confidence</span>
+          <div id="res-conf" class="font-mono text-xl font-bold text-emerald-400">--</div>
+        </div>
+      </div>
+      
+    </div>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
