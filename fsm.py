@@ -12,6 +12,7 @@ class RepFSM:
         self.last_state_change_time = time.time()
         self.feedback = "Siap dimulai!"
         self.up_y_center = None
+        self.incomplete_reps = 0   # Hitung siklus yang tidak terpenuhi
 
     def calculate_targets(self, base_target, set_type):
         if set_type == 'standard':
@@ -33,6 +34,7 @@ class RepFSM:
         self.last_state_change_time = time.time()
         self.feedback = "Siap dimulai!"
         self.up_y_center = None
+        self.incomplete_reps = 0
 
     def next_set(self):
         if self.current_set_index < len(self.target_array) - 1:
@@ -54,7 +56,8 @@ class RepFSM:
             'feedback': self.feedback,
             'is_resting': self.is_resting,
             'current_set_index': self.current_set_index,
-            'target_array': self.target_array
+            'target_array': self.target_array,
+            'incomplete_reps': self.incomplete_reps
         }
 
     def update(self, detected_class, y_center, box_height, current_timestamp=None):
@@ -74,33 +77,28 @@ class RepFSM:
                 self.state = 'GOING_DOWN'
                 self.last_state_change_time = current_time
                 self.feedback = "Turun perlahan..."
-                
+
         elif self.state == 'GOING_DOWN':
             if detected_class == 'down':
-                if time_in_state < 0.4:
-                    self.feedback = "⚠️ Turun terlalu cepat!"
-                else:
-                    self.feedback = "Tahan..."
+                # Berhasil mencapai posisi DOWN — siklus berjalan benar
+                self.feedback = "Tahan..."
                 self.state = 'DOWN'
                 self.last_state_change_time = current_time
             elif detected_class == 'up':
+                # Kembali ke UP tanpa melewati DOWN — siklus tidak lengkap
+                self.incomplete_reps += 1
+                self.feedback = "⚠️ Gerakan tidak lengkap!"
                 self.state = 'UP'
                 self.last_state_change_time = current_time
-                
+
         elif self.state == 'DOWN':
-            if self.up_y_center is not None:
-                drop_distance = y_center - self.up_y_center
-                if drop_distance < (box_height * 0.08):
-                    self.feedback = "⚠️ Turun kurang rendah!"
-                    
             if detected_class == 'in_between' or detected_class == 'up':
-                if time_in_state < 0.2:
-                    self.feedback = "⚠️ Jangan memantul!"
                 self.state = 'GOING_UP'
                 self.last_state_change_time = current_time
-                
+
         elif self.state == 'GOING_UP':
             if detected_class == 'up':
+                # Berhasil mencapai posisi UP — satu rep dihitung
                 self.reps += 1
                 if self.reps >= self.target:
                     self.is_resting = True
@@ -110,10 +108,12 @@ class RepFSM:
                         self.feedback = "🏆 Latihan Selesai! Luar Biasa!"
                 elif "⚠️" not in self.feedback:
                     self.feedback = "✅ Sempurna!"
-                    
                 self.state = 'UP'
                 self.last_state_change_time = current_time
             elif detected_class == 'down':
+                # Kembali ke DOWN tanpa mencapai UP — siklus tidak selesai
+                self.incomplete_reps += 1
+                self.feedback = "⚠️ Gerakan tidak selesai!"
                 self.state = 'DOWN'
                 self.last_state_change_time = current_time
         

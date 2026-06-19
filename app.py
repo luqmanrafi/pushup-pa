@@ -1,13 +1,20 @@
 import os
 import cv2
 import numpy as np
-import base64
-import uuid
-from flask import Flask, request, jsonify, render_template, send_from_directory
+import datetime
+from flask import Flask, request, jsonify, render_template, send_from_directory, session
+from werkzeug.security import generate_password_hash, check_password_hash
+import mysql.connector
+from dotenv import load_dotenv
 from ultralytics import YOLO
 from fsm import RepFSM
+from database import get_db_connection
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'default_secret_key')
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -20,17 +27,214 @@ fsm = RepFSM()
 def index():
     return render_template('index.html')
 
-@app.route('/set_target', methods=['POST'])
-def set_target():
-    data = request.json or {}
+# ==========================================
+# AUTHENTICATION ROUTES
+# ==========================================
+
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json
+    username = data.get('username')
+    email = data.get('email')
+    password = data.get('password')
+
+    if not username or not email or not password:
+        return jsonify({'error': 'Username, email, dan password harus diisi'}), 400
+
+    hashed_password = generate_password_hash(password)
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'Database tidak terhubung'}), 500
+
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO users (username, email, password) VALUES (%s, %s, %s)", (username, email, hashed_password))
+        conn.commit()
+        return jsonify({'message': 'Registrasi berhasil!'})
+    except mysql.connector.Error as err:
+        if err.errno == 1062: # Duplicate entry
+            # Check which field is duplicated
+            if 'email' in str(err):
+                return jsonify({'error': 'Email sudah terpakai'}), 400
+            else:
+                return jsonify({'error': 'Username sudah terpakai'}), 400
+        return jsonify({'error': str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'Database tidak terhubung'}), 500
+
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if user and check_password_hash(user['password'], password):
+        session['user_id'] = user['id']
+        session['username'] = user['username']
+        return jsonify({'message': 'Login berhasil', 'username': user['username']})
+    
+    return jsonify({'error': 'Username atau password salah'}), 401
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({'message': 'Logout berhasil'})
+
+@app.route('/check_auth', methods=['GET'])
+def check_auth():
+    if 'user_id' in session:
+        return jsonify({'is_authenticated': True, 'username': session['username']})
+    return jsonify({'is_authenticated': False})
+
+# ==========================================
+# WORKOUT SESSION ROUTES
+# ==========================================
+
+@app.route('/start_session', methods=['POST'])
+def start_session():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Harus login terlebih dahulu'}), 401
+
+    data = request.json
     target = data.get('target', 15)
     set_type = data.get('set_type', 'standard')
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'Database tidak terhubung'}), 500
+
+    waktu_mulai = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    tanggal_latihan = datetime.datetime.now().strftime('%Y-%m-%d')
+    user_id = session['user_id']
+
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO workout_sessions 
+        (user_id, tanggal_latihan, waktu_mulai, tipe_set, target_repetisi) 
+        VALUES (%s, %s, %s, %s, %s)
+    """, (user_id, tanggal_latihan, waktu_mulai, set_type, target))
+    
+    conn.commit()
+    session_id = cursor.lastrowid
+    cursor.close()
+    conn.close()
+
+    # Reset FSM
     try:
         target = int(target)
     except ValueError:
         target = 15
     fsm.reset(target, set_type)
-    return jsonify({'message': 'Target set', 'target': target, 'set_type': set_type})
+
+    return jsonify({
+        'message': 'Sesi dimulai', 
+        'session_id': session_id,
+        'target': target,
+        'set_type': set_type
+    })
+
+@app.route('/end_session', methods=['POST'])
+def end_session():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Harus login terlebih dahulu'}), 401
+
+    data = request.json
+    session_id = data.get('session_id')
+    total_reps = data.get('total_reps', 0)
+    sets_completed = data.get('sets_completed', 0)
+    incomplete_reps = data.get('incomplete_reps', 0)
+    
+    if not session_id:
+        return jsonify({'error': 'Session ID tidak diberikan'}), 400
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'Database tidak terhubung'}), 500
+
+    waktu_selesai = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    user_id = session['user_id']
+
+    cursor = conn.cursor()
+    # Pastikan sesi milik user yang bersangkutan
+    if total_reps == 0 and incomplete_reps == 0:
+        # Jika tidak ada gerakan yang dicapai sama sekali, hapus record (sesi batal)
+        cursor.execute("DELETE FROM workout_sessions WHERE id = %s AND user_id = %s", (session_id, user_id))
+    else:
+        cursor.execute("""
+            UPDATE workout_sessions 
+            SET waktu_selesai = %s, total_reps_dicapai = %s, jumlah_set_dicapai = %s, gerakan_salah = %s
+            WHERE id = %s AND user_id = %s
+        """, (waktu_selesai, total_reps, sets_completed, incomplete_reps, session_id, user_id))
+    
+    conn.commit()
+    rows_affected = cursor.rowcount
+    cursor.close()
+    conn.close()
+
+    if rows_affected == 0:
+        return jsonify({'error': 'Sesi tidak ditemukan atau tidak ada akses'}), 404
+
+    return jsonify({'message': 'Sesi diakhiri dan disimpan'})
+
+@app.route('/get_history', methods=['GET'])
+def get_history():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Harus login terlebih dahulu'}), 401
+
+    user_id = session['user_id']
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'Database tidak terhubung'}), 500
+
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT * FROM workout_sessions 
+        WHERE user_id = %s AND waktu_selesai IS NOT NULL
+        ORDER BY waktu_selesai DESC LIMIT 50
+    """, (user_id,))
+    
+    history = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    # Format data agar sesuai dengan format frontend
+    formatted_history = []
+    for row in history:
+        # Hitung durasi
+        waktu_mulai = row['waktu_mulai']
+        waktu_selesai = row['waktu_selesai']
+        durasi = int((waktu_selesai - waktu_mulai).total_seconds()) if waktu_mulai and waktu_selesai else 0
+        
+        formatted_history.append({
+            'id': row['id'],
+            'date': row['waktu_selesai'].isoformat(),
+            'setType': row['tipe_set'],
+            'target': row['target_repetisi'],
+            'totalReps': row['total_reps_dicapai'],
+            'setsCompleted': row['jumlah_set_dicapai'],
+            'incompleteReps': row['gerakan_salah'],
+            'durationSeconds': durasi
+        })
+
+    return jsonify(formatted_history)
+
+# ==========================================
+# OLD ROUTES (Modifikasi sebagian)
+# ==========================================
+
+# endpoint set_target diganti oleh start_session
+# @app.route('/set_target', methods=['POST']) dihapus
 
 @app.route('/next_set', methods=['POST'])
 def next_set():
@@ -62,6 +266,7 @@ def analyze():
             'is_resting': fsm.is_resting,
             'current_set_index': fsm.current_set_index,
             'target_array': fsm.target_array,
+            'incomplete_reps': fsm.incomplete_reps,
             'confidence': 0.0,
             'message': 'No class detected',
             'image': None
@@ -103,6 +308,7 @@ def analyze():
                         response['is_resting'] = status['is_resting']
                         response['current_set_index'] = status['current_set_index']
                         response['target_array'] = status['target_array']
+                        response['incomplete_reps'] = status['incomplete_reps']
                         response['confidence'] = round(confidence, 2)
                         response['message'] = 'Success'
                     else:

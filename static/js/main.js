@@ -24,6 +24,26 @@ const btnNextSet        = document.getElementById('btn-next-set');
 const btnAudioToggle    = document.getElementById('btn-audio-toggle');
 const audioIcon         = document.getElementById('audio-icon');
 
+// Auth & Session DOM
+const authModal         = document.getElementById('auth-modal');
+const authForm          = document.getElementById('auth-form');
+const authTitle         = document.getElementById('auth-title');
+const authDesc          = document.getElementById('auth-desc');
+const authUsername      = document.getElementById('auth-username');
+const authEmail         = document.getElementById('auth-email');
+const authEmailGroup    = document.getElementById('auth-email-group');
+const authPassword      = document.getElementById('auth-password');
+const authPasswordConfirm = document.getElementById('auth-password-confirm');
+const authPasswordConfirmGroup = document.getElementById('auth-password-confirm-group');
+const authError         = document.getElementById('auth-error');
+const btnAuthSubmit     = document.getElementById('btn-auth-submit');
+const btnAuthSwitch     = document.getElementById('btn-auth-switch');
+const authSwitchText    = document.getElementById('auth-switch-text');
+const userInfo          = document.getElementById('user-info');
+const userName          = document.getElementById('user-name');
+const btnLogout         = document.getElementById('btn-logout');
+const btnEndSession     = document.getElementById('btn-end-session');
+
 // New config UI refs
 const btnRepMinus       = document.getElementById('btn-rep-minus');
 const btnRepPlus        = document.getElementById('btn-rep-plus');
@@ -268,29 +288,58 @@ updateAudioUI();
 //  SESSION MANAGER  — tracking sesi aktif
 // ============================================================
 let session = {
+  sessionId: null, // Dari DB
   startTime: null,
   setType: 'standard',
   target: 15,
   targetArray: [],
   totalReps: 0,
   setsCompleted: 0,
-  warnings: [],
+  incompleteReps: 0,
   lastFeedback: ''
 };
 
-function sessionStart() {
+async function sessionStart() {
   const targetVal  = document.getElementById('target-input').value;
   const setTypeVal = document.getElementById('set-type').value;
-  session = {
-    startTime:      Date.now(),
-    setType:        setTypeVal,
-    target:         parseInt(targetVal) || 15,
-    targetArray:    [],
-    totalReps:      0,
-    setsCompleted:  0,
-    warnings:       [],
-    lastFeedback:   ''
-  };
+  
+  try {
+    const res = await fetch('/start_session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target: parseInt(targetVal) || 15,
+        set_type: setTypeVal
+      })
+    });
+    
+    if (res.status === 401) {
+      alert("Harap login terlebih dahulu.");
+      return false;
+    }
+    
+    const data = await res.json();
+    if (res.ok) {
+      session = {
+        sessionId:      data.session_id,
+        startTime:      Date.now(),
+        setType:        setTypeVal,
+        target:         parseInt(targetVal) || 15,
+        targetArray:    [],
+        totalReps:      0,
+        setsCompleted:  0,
+        incompleteReps: 0,
+        lastFeedback:   ''
+      };
+      return true;
+    } else {
+      console.error(data.error);
+      return false;
+    }
+  } catch (err) {
+    console.error("Gagal memulai sesi DB", err);
+    return false;
+  }
 }
 
 function sessionUpdate(result) {
@@ -306,6 +355,11 @@ function sessionUpdate(result) {
     session.totalReps = result.reps;
   }
 
+  // Ambil jumlah gerakan salah langsung dari server (sudah dihitung FSM)
+  if (result.incomplete_reps !== undefined) {
+    session.incompleteReps = result.incomplete_reps;
+  }
+
   // Deteksi set selesai
   if (result.is_resting && result.current_set_index !== undefined) {
     const setIdx = result.current_set_index;
@@ -315,31 +369,34 @@ function sessionUpdate(result) {
   }
 }
 
-function sessionSave() {
-  if (!session.startTime || session.totalReps === 0) return;
+async function sessionSave() {
+  if (!session.sessionId) return;
 
-  const durationSec = Math.floor((Date.now() - session.startTime) / 1000);
-
-  const record = {
-    id:              crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
-    date:            new Date().toISOString(),
-    setType:         session.setType,
-    target:          session.target,
-    targetArray:     session.targetArray,
-    totalReps:       session.totalReps,
-    setsCompleted:   session.setsCompleted,
-    warnings:        [...new Set(session.warnings)], // deduplicate
-    durationSeconds: durationSec
-  };
-
-  const existing = JSON.parse(localStorage.getItem('workoutHistory') || '[]');
-  existing.unshift(record); // terbaru di atas
-  // Batasi 50 sesi
-  if (existing.length > 50) existing.splice(50);
-  localStorage.setItem('workoutHistory', JSON.stringify(existing));
-
-  renderHistoryPanel();
+  try {
+    const res = await fetch('/end_session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: session.sessionId,
+        total_reps: session.totalReps,
+        sets_completed: session.setsCompleted,
+        incomplete_reps: session.incompleteReps
+      })
+    });
+    if (res.ok) {
+      session.sessionId = null; // Tandai sudah disimpan
+      renderHistoryPanel();
+    }
+  } catch (err) {
+    console.error("Gagal menyimpan sesi", err);
+  }
 }
+
+// Handler Akhiri Sesi Button
+btnEndSession.addEventListener('click', async () => {
+  await sessionSave();
+  stopCamera();
+});
 
 // ============================================================
 //  HISTORY RENDERING
@@ -362,16 +419,23 @@ function formatDate(isoString) {
 }
 
 function buildHistoryCard(record, compact = true) {
-  const warningCount = record.warnings ? record.warnings.length : 0;
-  const warningBadge = warningCount > 0
-    ? `<span class="history-badge warning">${warningCount} peringatan</span>`
-    : `<span class="history-badge good">Form baik</span>`;
+  // Support data lama (warnings) dan baru (incompleteReps)
+  const badCount = record.incompleteReps !== undefined
+    ? record.incompleteReps
+    : (record.warnings ? record.warnings.length : 0);
+
+  const formBadge = badCount > 0
+    ? `<span class="history-badge warning">${badCount}\u00d7 gerakan salah</span>`
+    : `<span class="history-badge good">\u2713 Siklus penuh</span>`;
 
   const setLabel = SET_TYPE_LABEL[record.setType] || record.setType;
 
-  const warningDetail = (!compact && record.warnings && record.warnings.length > 0)
-    ? `<div class="mt-2 flex flex-wrap gap-1">
-        ${record.warnings.map(w => `<span class="history-badge warning text-xs">${w}</span>`).join('')}
+  const incompleteDetail = (!compact && badCount > 0)
+    ? `<div class="mt-2 p-2.5 rounded-xl bg-rose-500/5 border border-rose-500/10">
+        <p class="text-xs text-rose-400 font-medium">
+          <span class="font-bold">${badCount}\u00d7</span> siklus tidak terpenuhi
+          <span class="text-zinc-600 ml-1">(UP\u2192DOWN\u2192UP tidak komplit)</span>
+        </p>
        </div>`
     : '';
 
@@ -380,7 +444,7 @@ function buildHistoryCard(record, compact = true) {
       <div class="flex items-start justify-between gap-2">
         <div class="flex-1 min-w-0">
           <p class="text-sm font-bold text-white truncate">${formatDate(record.date)}</p>
-          <p class="text-xs text-zinc-500 mt-0.5">${setLabel} · ${formatDuration(record.durationSeconds)}</p>
+          <p class="text-xs text-zinc-500 mt-0.5">${setLabel} \u00b7 ${formatDuration(record.durationSeconds)}</p>
         </div>
         <div class="flex flex-col items-end gap-1 shrink-0">
           <span class="text-2xl font-black text-emerald-400">${record.totalReps}</span>
@@ -388,16 +452,27 @@ function buildHistoryCard(record, compact = true) {
         </div>
       </div>
       <div class="flex items-center gap-2 mt-2 flex-wrap">
-        ${warningBadge}
+        ${formBadge}
         <span class="history-badge neutral">${record.setsCompleted} set</span>
       </div>
-      ${warningDetail}
+      ${incompleteDetail}
     </div>
   `;
 }
 
-function renderHistoryPanel() {
-  const history = JSON.parse(localStorage.getItem('workoutHistory') || '[]');
+async function fetchHistoryData() {
+  try {
+    const res = await fetch('/get_history');
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (err) {
+    console.error("Gagal ambil history", err);
+    return [];
+  }
+}
+
+async function renderHistoryPanel() {
+  const history = await fetchHistoryData();
 
   if (history.length === 0) {
     historyEmpty.classList.remove('hidden');
@@ -406,13 +481,12 @@ function renderHistoryPanel() {
   }
 
   historyEmpty.classList.add('hidden');
-  // Tampilkan max 3 sesi terbaru di panel sidebar
   const recent = history.slice(0, 3);
   historyList.innerHTML = recent.map(r => buildHistoryCard(r, true)).join('');
 }
 
-function renderHistoryModal() {
-  const history = JSON.parse(localStorage.getItem('workoutHistory') || '[]');
+async function renderHistoryModal() {
+  const history = await fetchHistoryData();
 
   if (history.length === 0) {
     modalHistoryList.innerHTML = `
@@ -450,20 +524,30 @@ historyModal.addEventListener('click', (e) => {
 });
 
 // Event: Hapus Semua
+// Event: Hapus Semua
 btnClearHistory.addEventListener('click', () => {
-  if (confirm('Hapus semua riwayat latihan?')) {
-    localStorage.removeItem('workoutHistory');
-    renderHistoryPanel();
-  }
+  // Fitur dihapus karena history sudah di database
 });
 
-// Render history saat pertama load
-renderHistoryPanel();
+// Render history dihapus dari sini, dipindah ke checkAuth()
 
 // ============================================================
 //  CAMERA
 // ============================================================
 async function startCamera() {
+  // Cek Auth sebelum start
+  const authRes = await fetch('/check_auth');
+  const authData = await authRes.json();
+  if (!authData.is_authenticated) {
+    authModal.classList.remove('hidden');
+    authModal.classList.add('flex');
+    return;
+  }
+
+  // Mulai session tracking di database
+  const startOk = await sessionStart();
+  if (!startOk) return;
+
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: true });
     videoStream.srcObject = stream;
@@ -480,26 +564,19 @@ async function startCamera() {
     zoomControl.classList.remove('hidden');
     zoomControl.classList.add('flex');
     
-    btnCameraText.textContent = 'Stop Workout';
+    btnCameraText.textContent = 'Stop Camera';
     btnCameraIcon.setAttribute('data-lucide', 'square');
     btnCamera.classList.replace('bg-emerald-500', 'bg-rose-500');
     btnCamera.classList.replace('hover:bg-emerald-400', 'hover:bg-rose-400');
     btnCamera.classList.replace('text-zinc-950', 'text-white');
     btnCamera.classList.replace('shadow-[0_0_20px_rgba(16,185,129,0.3)]', 'shadow-[0_0_20px_rgba(244,63,94,0.3)]');
-    lucide.createIcons();
     
-    // Mulai session tracking
-    sessionStart();
+    btnEndSession.classList.remove('hidden');
+    btnEndSession.classList.add('flex');
+
+    lucide.createIcons();
 
     startAnalysisLoop();
-    
-    const targetVal  = document.getElementById('target-input').value;
-    const setTypeVal = document.getElementById('set-type').value;
-    fetch('/set_target', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: targetVal, set_type: setTypeVal })
-    });
   } catch (err) {
     console.error("Error accessing camera: ", err);
     alert("Could not access the camera. Please grant permission.");
@@ -507,9 +584,6 @@ async function startCamera() {
 }
 
 function stopCamera() {
-  // Simpan sesi sebelum reset
-  sessionSave();
-
   if (stream) {
     stream.getTracks().forEach(track => track.stop());
   }
@@ -535,7 +609,15 @@ function stopCamera() {
   btnCamera.classList.replace('hover:bg-rose-400', 'hover:bg-emerald-400');
   btnCamera.classList.replace('text-white', 'text-zinc-950');
   btnCamera.classList.replace('shadow-[0_0_20px_rgba(244,63,94,0.3)]', 'shadow-[0_0_20px_rgba(16,185,129,0.3)]');
+  
+  btnEndSession.classList.add('hidden');
+  btnEndSession.classList.remove('flex');
+
   lucide.createIcons();
+  
+  // Sembunyikan form feedback
+  feedbackBanner.classList.add('opacity-0', 'scale-95');
+  feedbackBanner.classList.remove('scale-100', 'opacity-100');
   
   // Reset Stats
   document.getElementById('res-state').textContent = '--';
@@ -753,11 +835,6 @@ function updateDashboard(result) {
   if (currentFeedback !== _lastFeedback) {
     if (currentFeedback.includes('⚠️')) {
       playSound('warning');
-      // Simpan jenis warning ke session
-      const warnText = currentFeedback.replace('⚠️', '').trim();
-      if (warnText && session.warnings) {
-        session.warnings.push(warnText);
-      }
     } else if (currentFeedback.includes('🎉') || currentFeedback.includes('🏆')) {
       playSound('finish');
       // Auto-save sesi ketika latihan selesai
@@ -775,3 +852,133 @@ function updateDashboard(result) {
 
   _lastReps = currentReps;
 }
+
+// ============================================================
+//  AUTHENTICATION LOGIC
+// ============================================================
+let isLoginMode = true;
+
+// Toggle mode form
+btnAuthSwitch.addEventListener('click', () => {
+  isLoginMode = !isLoginMode;
+  if (isLoginMode) {
+    authTitle.textContent = "Login ke RepCount";
+    authDesc.textContent = "Masuk untuk menyimpan riwayat latihan Anda.";
+    btnAuthSubmit.textContent = "Login";
+    authSwitchText.textContent = "Belum punya akun?";
+    btnAuthSwitch.textContent = "Daftar sekarang";
+    authEmailGroup.classList.add('hidden');
+    authEmail.required = false;
+    authPasswordConfirmGroup.classList.add('hidden');
+    authPasswordConfirm.required = false;
+  } else {
+    authTitle.textContent = "Daftar Akun Baru";
+    authDesc.textContent = "Buat akun untuk memulai melacak progress Anda.";
+    btnAuthSubmit.textContent = "Register";
+    authSwitchText.textContent = "Sudah punya akun?";
+    btnAuthSwitch.textContent = "Login di sini";
+    authEmailGroup.classList.remove('hidden');
+    authEmail.required = true;
+    authPasswordConfirmGroup.classList.remove('hidden');
+    authPasswordConfirm.required = true;
+  }
+  authError.classList.add('hidden');
+});
+
+// Check auth status on load
+async function checkAuth() {
+  try {
+    const res = await fetch('/check_auth');
+    const data = await res.json();
+    if (data.is_authenticated) {
+      authModal.classList.add('hidden');
+      authModal.classList.remove('flex');
+      userInfo.classList.remove('hidden');
+      userInfo.classList.add('flex');
+      userName.textContent = data.username;
+      renderHistoryPanel();
+    } else {
+      authModal.classList.remove('hidden');
+      authModal.classList.add('flex');
+      userInfo.classList.add('hidden');
+      userInfo.classList.remove('flex');
+    }
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+// Handle Form Submit
+authForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = authUsername.value;
+  const password = authPassword.value;
+  const email = authEmail.value;
+  const passwordConfirm = authPasswordConfirm.value;
+  const endpoint = isLoginMode ? '/login' : '/register';
+  
+  if (!isLoginMode && password !== passwordConfirm) {
+    authError.classList.remove('hidden');
+    authError.classList.replace('text-emerald-400', 'text-rose-400');
+    authError.textContent = "Konfirmasi password tidak cocok!";
+    return;
+  }
+  
+  const payload = isLoginMode 
+    ? { username, password } 
+    : { username, email, password };
+  
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    
+    if (res.ok) {
+      if (isLoginMode) {
+        authModal.classList.add('hidden');
+        authModal.classList.remove('flex');
+        userInfo.classList.remove('hidden');
+        userInfo.classList.add('flex');
+        userName.textContent = data.username;
+        renderHistoryPanel();
+      } else {
+        // Jika register sukses, langsung ganti mode ke login dan isi form
+        isLoginMode = true;
+        authTitle.textContent = "Login ke RepCount";
+        btnAuthSubmit.textContent = "Login";
+        authSwitchText.textContent = "Belum punya akun?";
+        btnAuthSwitch.textContent = "Daftar sekarang";
+        authEmailGroup.classList.add('hidden');
+        authEmail.required = false;
+        authPasswordConfirmGroup.classList.add('hidden');
+        authPasswordConfirm.required = false;
+        authError.classList.remove('hidden');
+        authError.classList.replace('text-rose-400', 'text-emerald-400');
+        authError.textContent = "Registrasi berhasil! Silakan login.";
+      }
+    } else {
+      authError.classList.remove('hidden');
+      authError.classList.replace('text-emerald-400', 'text-rose-400');
+      authError.textContent = data.error || "Terjadi kesalahan";
+    }
+  } catch(e) {
+    authError.classList.remove('hidden');
+    authError.textContent = "Koneksi ke server gagal.";
+  }
+});
+
+// Handle Logout
+btnLogout.addEventListener('click', async () => {
+  try {
+    await fetch('/logout', { method: 'POST' });
+    window.location.reload(); // Reload halaman untuk reset semua state
+  } catch(e) {
+    console.error(e);
+  }
+});
+
+// Run auth check on load
+checkAuth();

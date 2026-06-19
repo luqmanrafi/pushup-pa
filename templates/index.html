@@ -23,6 +23,14 @@
     </div>
     
     <div class="flex items-center gap-4">
+      <!-- User Info -->
+      <div id="user-info" class="hidden items-center gap-3 mr-2 border-r border-white/10 pr-4">
+        <span class="text-sm font-medium text-zinc-400">Halo, <span id="user-name" class="text-emerald-400 font-bold">User</span></span>
+        <button id="btn-logout" class="text-xs text-rose-400 hover:text-rose-300 transition-colors flex items-center gap-1">
+          <i data-lucide="log-out" class="w-3 h-3"></i> Logout
+        </button>
+      </div>
+
       <!-- Audio Toggle Button -->
       <button id="btn-audio-toggle" title="Toggle Audio Feedback"
         class="w-10 h-10 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-white/10 flex items-center justify-center transition-all audio-toggle-on">
@@ -35,6 +43,12 @@
         <span>Upload Video</span>
       </button>
       
+      <!-- Akhiri Sesi Button (Hidden initially) -->
+      <button id="btn-end-session" class="hidden px-6 py-2.5 rounded-full bg-rose-500 hover:bg-rose-400 text-white font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(225,29,72,0.3)] flex items-center gap-2">
+        <i data-lucide="save" class="w-4 h-4"></i>
+        <span>Akhiri Sesi & Simpan</span>
+      </button>
+
       <button id="btn-camera" class="px-6 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] flex items-center gap-2">
         <i id="btn-camera-icon" data-lucide="camera" class="w-4 h-4"></i>
         <span id="btn-camera-text">Start Workout</span>
@@ -255,6 +269,56 @@
       <!-- Modal Body -->
       <div id="modal-history-list" class="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
         <!-- Diisi oleh JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== AUTH MODAL ===== -->
+  <div id="auth-modal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+    <div class="bg-zinc-900 border border-white/10 rounded-3xl w-full max-w-md flex flex-col shadow-2xl p-8 relative overflow-hidden">
+      <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-cyan-500"></div>
+      
+      <div class="text-center mb-8">
+        <div class="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-4">
+          <i data-lucide="user" class="w-8 h-8 text-emerald-400"></i>
+        </div>
+        <h2 id="auth-title" class="text-2xl font-bold text-white mb-2">Login ke RepCount</h2>
+        <p id="auth-desc" class="text-zinc-400 text-sm">Masuk untuk menyimpan riwayat latihan Anda.</p>
+      </div>
+
+      <form id="auth-form" class="flex flex-col gap-4">
+        <div>
+          <label class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Username</label>
+          <input type="text" id="auth-username" required class="w-full bg-zinc-800/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors">
+        </div>
+        
+        <div id="auth-email-group" class="hidden">
+          <label class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Email</label>
+          <input type="email" id="auth-email" class="w-full bg-zinc-800/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Password</label>
+          <input type="password" id="auth-password" required class="w-full bg-zinc-800/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors">
+        </div>
+        
+        <div id="auth-password-confirm-group" class="hidden">
+          <label class="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Konfirmasi Password</label>
+          <input type="password" id="auth-password-confirm" class="w-full bg-zinc-800/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors">
+        </div>
+        
+        <div id="auth-error" class="text-rose-400 text-sm text-center hidden mt-2"></div>
+
+        <button type="submit" id="btn-auth-submit" class="w-full py-3.5 mt-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+          Login
+        </button>
+      </form>
+
+      <div class="mt-6 text-center">
+        <p class="text-zinc-500 text-sm">
+          <span id="auth-switch-text">Belum punya akun?</span> 
+          <button id="btn-auth-switch" class="text-emerald-400 hover:text-emerald-300 font-bold ml-1 transition-colors">Daftar sekarang</button>
+        </p>
       </div>
     </div>
   </div>
