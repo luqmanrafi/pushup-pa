@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body class="h-screen w-full flex flex-col overflow-hidden">
+<body class="min-h-screen w-full flex flex-col bg-zinc-950">
   
   <!-- Header -->
   <header class="w-full py-5 px-8 flex justify-between items-center border-b border-white/5 bg-zinc-950/80 backdrop-blur-md z-20">
@@ -23,6 +23,12 @@
     </div>
     
     <div class="flex items-center gap-4">
+      <!-- Audio Toggle Button -->
+      <button id="btn-audio-toggle" title="Toggle Audio Feedback"
+        class="w-10 h-10 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-white/10 flex items-center justify-center transition-all audio-toggle-on">
+        <i id="audio-icon" data-lucide="volume-2" class="w-4 h-4 text-emerald-400"></i>
+      </button>
+
       <input type="file" id="video-upload" accept="video/mp4,video/quicktime,video/webm" class="hidden">
       <button id="btn-upload" class="px-6 py-2.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold tracking-wide transition-all border border-white/10 flex items-center gap-2">
         <i data-lucide="upload" class="w-4 h-4"></i>
@@ -37,7 +43,7 @@
   </header>
 
   <!-- Main Content -->
-  <main class="flex-1 p-6 lg:p-8 flex flex-col lg:flex-row gap-6 lg:gap-8 max-w-[1600px] mx-auto w-full">
+  <main class="flex-1 p-6 lg:p-8 flex flex-col lg:flex-row gap-6 lg:gap-8 max-w-[1600px] mx-auto w-full" style="height: calc(100vh - 81px);">
     
     <!-- Camera Section (Center Stage) -->
     <div class="flex-1 glass-card flex flex-col relative overflow-hidden shadow-2xl">
@@ -86,29 +92,88 @@
     </div>
 
     <!-- Stats Sidebar (Right side) -->
-    <div class="w-full lg:w-[400px] flex flex-col gap-6 shrink-0">
+    <div class="w-full lg:w-[400px] flex flex-col gap-6 shrink-0 overflow-y-auto sidebar-scroll" style="max-height: calc(100vh - 113px);">
       
-      <!-- Big Rep Counter -->
-      <div class="glass-card p-8 flex flex-col items-center justify-center text-center relative overflow-hidden border-emerald-500/20">
-        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-cyan-500"></div>
-        <h2 id="set-indicator" class="text-sm font-bold text-zinc-400 uppercase tracking-widest mb-2">Total Reps (Set 1)</h2>
-        <div id="rep-count" class="text-8xl font-black text-white tracking-tighter">0</div>
-        <div class="mt-4 flex items-center justify-center gap-2 flex-wrap">
-            <label for="set-type" class="text-zinc-400 text-sm font-medium">Type:</label>
-            <select id="set-type" class="bg-zinc-900 border border-white/10 rounded-lg px-2 py-1 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors">
-                <option value="standard">Standard</option>
-                <option value="pyramid">Pyramid</option>
-                <option value="drop">Drop Set</option>
-            </select>
-            
-            <label for="target-input" class="text-zinc-400 text-sm font-medium ml-2">Base:</label>
-            <input type="number" id="target-input" value="15" min="1" class="w-16 bg-zinc-900 border border-white/10 rounded-lg px-2 py-1 text-white text-center text-sm focus:outline-none focus:border-emerald-500 transition-colors">
-            <span class="text-emerald-400 text-sm font-medium">Reps</span>
+      <!-- Workout Config Card -->
+      <div class="glass-card relative border-emerald-500/20" style="overflow:visible;">
+        <!-- Top accent bar -->
+        <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-emerald-500 via-cyan-400 to-emerald-500"></div>
+
+        <!-- Rep Counter Display -->
+        <div class="px-6 pt-6 pb-4 flex flex-col items-center text-center border-b border-white/5">
+          <p id="set-indicator" class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1">Total Reps — Set 1</p>
+          <div id="rep-count" class="text-7xl font-black text-white tracking-tighter leading-none my-1">0</div>
+          <!-- Set progress dots -->
+          <div id="set-dots" class="flex items-center gap-2 mt-2">
+            <!-- Diisi JavaScript -->
+          </div>
         </div>
-        <button id="btn-next-set" class="mt-5 w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-bold tracking-wide transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center justify-center gap-2 hidden">
-          <i data-lucide="play-circle" class="w-4 h-4"></i>
-          <span>Mulai Set Berikutnya</span>
-        </button>
+
+        <!-- Set Type Selector -->
+        <div class="px-6 pt-5 pb-4">
+          <p class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+            <i data-lucide="layers" class="w-3 h-3 text-cyan-400"></i> Tipe Set
+          </p>
+          <div class="grid grid-cols-3 gap-2" id="set-type-group">
+            <button data-value="standard" class="set-type-btn active" id="set-type-btn-standard">
+              <i data-lucide="minus" class="w-4 h-4 mx-auto mb-1"></i>
+              <span class="text-xs font-bold">Standard</span>
+              <span class="text-[10px] opacity-60 mt-0.5 block">3×15</span>
+            </button>
+            <button data-value="pyramid" class="set-type-btn" id="set-type-btn-pyramid">
+              <i data-lucide="triangle" class="w-4 h-4 mx-auto mb-1"></i>
+              <span class="text-xs font-bold">Pyramid</span>
+              <span class="text-[10px] opacity-60 mt-0.5 block">↑ menurun</span>
+            </button>
+            <button data-value="drop" class="set-type-btn" id="set-type-btn-drop">
+              <i data-lucide="trending-down" class="w-4 h-4 mx-auto mb-1"></i>
+              <span class="text-xs font-bold">Drop Set</span>
+              <span class="text-[10px] opacity-60 mt-0.5 block">↓ drop</span>
+            </button>
+          </div>
+          <!-- Hidden input dipakai JS -->
+          <input type="hidden" id="set-type" value="standard">
+        </div>
+
+        <!-- Rep Target Stepper -->
+        <div class="px-6 pb-6">
+          <p class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+            <i data-lucide="repeat" class="w-3 h-3 text-emerald-400"></i> Target Repetisi
+          </p>
+          <div class="flex items-center gap-3 bg-zinc-900/60 border border-white/6 rounded-2xl p-1.5">
+            <button id="btn-rep-minus" class="rep-stepper-btn">
+              <i data-lucide="minus" class="w-4 h-4"></i>
+            </button>
+            <div class="flex-1 text-center">
+              <input
+                id="target-display"
+                type="number"
+                min="1" max="100"
+                value="15"
+                class="target-display-input"
+              >
+              <div class="text-xs text-zinc-500 font-medium -mt-0.5">repetisi / set</div>
+            </div>
+            <button id="btn-rep-plus" class="rep-stepper-btn">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <!-- Hidden input dipakai logic JS yang sudah ada -->
+          <input type="hidden" id="target-input" value="15">
+
+          <!-- Rencana set preview -->
+          <div id="set-preview" class="mt-3 flex items-center justify-center gap-2 flex-wrap min-h-[24px]">
+            <!-- Diisi JavaScript -->
+          </div>
+        </div>
+
+        <!-- Next Set Button -->
+        <div class="px-6 pb-6 hidden" id="next-set-wrapper">
+          <button id="btn-next-set" class="w-full py-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-zinc-950 font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(6,182,212,0.25)] flex items-center justify-center gap-2">
+            <i data-lucide="play-circle" class="w-4 h-4"></i>
+            <span>Mulai Set Berikutnya</span>
+          </button>
+        </div>
       </div>
 
       <!-- Realtime Metrics -->
@@ -135,9 +200,64 @@
           <div id="res-conf" class="font-mono text-xl font-bold text-emerald-400">--</div>
         </div>
       </div>
-      
+
+      <!-- ===== HISTORY PANEL ===== -->
+      <div class="glass-card p-6 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+            <i data-lucide="clock" class="w-4 h-4 text-amber-400"></i> Riwayat Latihan
+          </h3>
+          <div class="flex items-center gap-2">
+            <button id="btn-clear-history" title="Hapus Semua Riwayat"
+              class="text-xs text-zinc-600 hover:text-rose-400 transition-colors flex items-center gap-1">
+              <i data-lucide="trash-2" class="w-3 h-3"></i>
+              <span>Hapus</span>
+            </button>
+            <button id="btn-view-all-history"
+              class="text-xs text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1">
+              <span>Lihat Semua</span>
+              <i data-lucide="chevron-right" class="w-3 h-3"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- History List (max 3 item) -->
+        <div id="history-list" class="flex flex-col gap-3">
+          <!-- Diisi oleh JavaScript -->
+        </div>
+
+        <!-- Empty history state -->
+        <div id="history-empty" class="flex flex-col items-center justify-center py-6 text-center">
+          <i data-lucide="inbox" class="w-8 h-8 text-zinc-700 mb-2"></i>
+          <p class="text-xs text-zinc-600">Belum ada riwayat latihan.</p>
+          <p class="text-xs text-zinc-700 mt-1">Selesaikan sesi pertama Anda!</p>
+        </div>
+      </div>
+
     </div>
   </main>
+
+  <!-- ===== HISTORY MODAL ===== -->
+  <div id="history-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+    <div class="bg-zinc-900 border border-white/10 rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between p-6 border-b border-white/5">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
+            <i data-lucide="history" class="w-4 h-4 text-amber-400"></i>
+          </div>
+          <h2 class="text-lg font-bold text-white">Riwayat Latihan Lengkap</h2>
+        </div>
+        <button id="btn-close-modal" class="w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors">
+          <i data-lucide="x" class="w-4 h-4 text-zinc-400"></i>
+        </button>
+      </div>
+      <!-- Modal Body -->
+      <div id="modal-history-list" class="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+        <!-- Diisi oleh JavaScript -->
+      </div>
+    </div>
+  </div>
 
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>

@@ -13,3 +13,222 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 1.5rem;
 }
+
+/* Sidebar scroll */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+.sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+
+/* ============================================================
+   AUDIO TOGGLE BUTTON
+   ============================================================ */
+.audio-toggle-on {
+  border-color: rgba(52, 211, 153, 0.3);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.15);
+}
+.audio-toggle-off {
+  border-color: rgba(255, 255, 255, 0.05);
+  opacity: 0.5;
+}
+
+/* ============================================================
+   HISTORY CARD
+   ============================================================ */
+.history-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 1rem;
+  padding: 0.875rem 1rem;
+  transition: border-color 0.2s, background 0.2s;
+}
+.history-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* History Badge */
+.history-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.history-badge.warning {
+  background: rgba(244, 63, 94, 0.12);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.2);
+}
+.history-badge.good {
+  background: rgba(52, 211, 153, 0.1);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.2);
+}
+.history-badge.neutral {
+  background: rgba(255, 255, 255, 0.05);
+  color: #a1a1aa;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ============================================================
+   HISTORY MODAL SCROLL
+   ============================================================ */
+#modal-history-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+#modal-history-list::-webkit-scrollbar {
+  width: 4px;
+}
+#modal-history-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+#modal-history-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+
+/* ============================================================
+   SET TYPE CARD BUTTONS
+   ============================================================ */
+.set-type-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 0.5rem;
+  border-radius: 0.875rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: #71717a; /* zinc-500 */
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.set-type-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #d4d4d8;
+}
+.set-type-btn.active {
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.35);
+  color: #34d399;
+  box-shadow: 0 0 14px rgba(52, 211, 153, 0.12);
+}
+
+/* ============================================================
+   REP STEPPER BUTTON
+   ============================================================ */
+.rep-stepper-btn {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.rep-stepper-btn:hover {
+  background: rgba(52, 211, 153, 0.15);
+  border-color: rgba(52, 211, 153, 0.3);
+  color: #34d399;
+  transform: scale(1.08);
+}
+.rep-stepper-btn:active {
+  transform: scale(0.95);
+}
+
+/* ============================================================
+   SET PREVIEW TAGS
+   ============================================================ */
+.set-preview-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #a1a1aa;
+}
+.set-preview-tag.active {
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.25);
+  color: #34d399;
+}
+.set-preview-tag.done {
+  background: rgba(6, 182, 212, 0.08);
+  border-color: rgba(6, 182, 212, 0.2);
+  color: #22d3ee;
+  opacity: 0.6;
+}
+
+/* ============================================================
+   SET PROGRESS DOTS
+   ============================================================ */
+.set-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+.set-dot.active {
+  background: #34d399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+  width: 20px;
+}
+.set-dot.done {
+  background: #22d3ee;
+  opacity: 0.5;
+}
+
+/* ============================================================
+   TARGET DISPLAY INPUT
+   ============================================================ */
+.target-display-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  text-align: center;
+  font-size: 1.875rem;   /* text-3xl */
+  font-weight: 900;      /* font-black */
+  color: #ffffff;
+  line-height: 1;
+  padding: 0;
+  -moz-appearance: textfield; /* Firefox: hide spinner */
+}
+.target-display-input::-webkit-outer-spin-button,
+.target-display-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.target-display-input:focus {
+  color: #34d399; /* emerald-400 */
+}
+
+

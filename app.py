@@ -12,7 +12,7 @@ UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 model = YOLO('best2.pt')
-model.to('cuda')
+# model.to('cuda')
 
 fsm = RepFSM()
 
