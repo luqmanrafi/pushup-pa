@@ -11,7 +11,8 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-model = YOLO('best.pt')
+model = YOLO('best2.pt')
+model.to('cuda')
 
 fsm = RepFSM()
 
@@ -72,38 +73,42 @@ def analyze():
             annotated_frame = img.copy()
             
             if result.boxes is not None and len(result.boxes.cls) > 0:
-                max_conf_idx = result.boxes.conf.argmax()
-                detected_class_idx = int(result.boxes.cls[max_conf_idx].item())
-                confidence = float(result.boxes.conf[max_conf_idx].item())
-                
-                class_names = {0: 'down', 1: 'in_between', 2: 'up'}
-                detected_class = class_names.get(detected_class_idx, 'unknown')
-                
-                xyxy = result.boxes.xyxy[max_conf_idx]
-                x1, y1, x2, y2 = int(xyxy[0].item()), int(xyxy[1].item()), int(xyxy[2].item()), int(xyxy[3].item())
-                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                
-                label = f"{detected_class.upper()} {confidence:.2f}"
-                cv2.putText(annotated_frame, label, (x1, max(10, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                
-                xywh = result.boxes.xywh[max_conf_idx]
-                y_center = float(xywh[1].item())
-                box_height = float(xywh[3].item())
-                
-                if confidence > 0.7:
-                    status = fsm.update(detected_class, y_center, box_height)
-                    response['yolo_class'] = detected_class.upper()
-                    response['fsm_state'] = status['state']
-                    response['reps'] = status['reps']
-                    response['target'] = status['target']
-                    response['feedback'] = status['feedback']
-                    response['is_resting'] = status['is_resting']
-                    response['current_set_index'] = status['current_set_index']
-                    response['target_array'] = status['target_array']
-                    response['confidence'] = round(confidence, 2)
-                    response['message'] = 'Success'
+                valid_indices = [i for i, cls in enumerate(result.boxes.cls) if int(cls.item()) in [0, 1, 2]]
+                if len(valid_indices) > 0:
+                    max_conf_idx = max(valid_indices, key=lambda i: result.boxes.conf[i].item())
+                    detected_class_idx = int(result.boxes.cls[max_conf_idx].item())
+                    confidence = float(result.boxes.conf[max_conf_idx].item())
+                    
+                    class_names = {0: 'down', 1: 'in_between', 2: 'up'}
+                    detected_class = class_names[detected_class_idx]
+                    
+                    xyxy = result.boxes.xyxy[max_conf_idx]
+                    x1, y1, x2, y2 = int(xyxy[0].item()), int(xyxy[1].item()), int(xyxy[2].item()), int(xyxy[3].item())
+                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    
+                    label = f"{detected_class.upper()} {confidence:.2f}"
+                    cv2.putText(annotated_frame, label, (x1, max(10, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    
+                    xywh = result.boxes.xywh[max_conf_idx]
+                    y_center = float(xywh[1].item())
+                    box_height = float(xywh[3].item())
+                    
+                    if confidence > 0.7:
+                        status = fsm.update(detected_class, y_center, box_height)
+                        response['yolo_class'] = detected_class.upper()
+                        response['fsm_state'] = status['state']
+                        response['reps'] = status['reps']
+                        response['target'] = status['target']
+                        response['feedback'] = status['feedback']
+                        response['is_resting'] = status['is_resting']
+                        response['current_set_index'] = status['current_set_index']
+                        response['target_array'] = status['target_array']
+                        response['confidence'] = round(confidence, 2)
+                        response['message'] = 'Success'
+                    else:
+                        response['message'] = 'Confidence too low (< 0.7)'
                 else:
-                    response['message'] = 'Confidence too low (< 0.7)'
+                    response['message'] = 'No valid class detected'
             else:
                 response['message'] = 'No box detected in image'
                 
@@ -163,38 +168,40 @@ def analyze_video():
                 annotated_frame = frame.copy()
                 
                 if result.boxes is not None and len(result.boxes.cls) > 0:
-                    max_conf_idx = result.boxes.conf.argmax()
-                    detected_class_idx = int(result.boxes.cls[max_conf_idx].item())
-                    confidence = float(result.boxes.conf[max_conf_idx].item())
-                    
-                    class_names = {0: 'down', 1: 'in_between', 2: 'up'}
-                    detected_class = class_names.get(detected_class_idx, 'unknown')
-                    
-                    xyxy = result.boxes.xyxy[max_conf_idx]
-                    x1, y1, x2, y2 = int(xyxy[0].item()), int(xyxy[1].item()), int(xyxy[2].item()), int(xyxy[3].item())
-                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    
-                    label = f"{detected_class.upper()} {confidence:.2f}"
-                    cv2.putText(annotated_frame, label, (x1, max(10, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                    
-                    xywh = result.boxes.xywh[max_conf_idx]
-                    y_center = float(xywh[1].item())
-                    box_height = float(xywh[3].item())
-                    
-                    if confidence > 0.7:
-                        status = fsm.update(detected_class, y_center, box_height, current_timestamp)
+                    valid_indices = [i for i, cls in enumerate(result.boxes.cls) if int(cls.item()) in [0, 1, 2]]
+                    if len(valid_indices) > 0:
+                        max_conf_idx = max(valid_indices, key=lambda i: result.boxes.conf[i].item())
+                        detected_class_idx = int(result.boxes.cls[max_conf_idx].item())
+                        confidence = float(result.boxes.conf[max_conf_idx].item())
                         
-                        cv2.putText(annotated_frame, f"State: {status['state']}", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-                        cv2.putText(annotated_frame, f"Reps: {status['reps']}/{status['target']} (Set {status['current_set_index']+1})", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                        class_names = {0: 'down', 1: 'in_between', 2: 'up'}
+                        detected_class = class_names[detected_class_idx]
                         
-                        color = (255, 255, 255)
-                        if "⚠️" in status['feedback']:
-                            color = (0, 0, 255)
-                        elif "✅" in status['feedback'] or "🎉" in status['feedback'] or "🏆" in status['feedback']:
-                            color = (0, 255, 0)
+                        xyxy = result.boxes.xyxy[max_conf_idx]
+                        x1, y1, x2, y2 = int(xyxy[0].item()), int(xyxy[1].item()), int(xyxy[2].item()), int(xyxy[3].item())
+                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        
+                        label = f"{detected_class.upper()} {confidence:.2f}"
+                        cv2.putText(annotated_frame, label, (x1, max(10, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                        
+                        xywh = result.boxes.xywh[max_conf_idx]
+                        y_center = float(xywh[1].item())
+                        box_height = float(xywh[3].item())
+                        
+                        if confidence > 0.7:
+                            status = fsm.update(detected_class, y_center, box_height, current_timestamp)
                             
-                        feedback_text = status['feedback'].replace("⚠️", "").replace("✅", "").replace("🎉", "").replace("🏆", "").strip()
-                        cv2.putText(annotated_frame, feedback_text, (30, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                            cv2.putText(annotated_frame, f"State: {status['state']}", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                            cv2.putText(annotated_frame, f"Reps: {status['reps']}/{status['target']} (Set {status['current_set_index']+1})", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                            
+                            color = (255, 255, 255)
+                            if "⚠️" in status['feedback']:
+                                color = (0, 0, 255)
+                            elif "✅" in status['feedback'] or "🎉" in status['feedback'] or "🏆" in status['feedback']:
+                                color = (0, 255, 0)
+                                
+                            feedback_text = status['feedback'].replace("⚠️", "").replace("✅", "").replace("🎉", "").replace("🏆", "").strip()
+                            cv2.putText(annotated_frame, feedback_text, (30, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
                 
                 out.write(annotated_frame)
             else:
