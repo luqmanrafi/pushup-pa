@@ -2,6 +2,8 @@ import os
 import cv2
 import numpy as np
 import datetime
+import base64
+import uuid
 from flask import Flask, request, jsonify, render_template, send_from_directory, session
 from werkzeug.security import generate_password_hash, check_password_hash
 import mysql.connector
@@ -18,8 +20,80 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'default_secret_key')
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-model = YOLO('best2.pt')
+model = YOLO('best.pt')
+pose_model = YOLO('yolov8n-pose.pt')
 # model.to('cuda')
+# pose_model.to('cuda')
+
+# Koneksi antar keypoint COCO 17-titik untuk menggambar skeleton
+SKELETON_CONNECTIONS = [
+    # Kepala — semua koneksi dihapus, tidak ditampilkan
+    (5, 6),                              # Bahu
+    (5, 7), (7, 9),                      # Lengan kiri
+    (6, 8), (8, 10),                     # Lengan kanan
+    (5, 11), (6, 12),                    # Torso
+    (11, 12),                            # Pinggul
+    (11, 13), (13, 15),                  # Kaki kiri
+    (12, 14), (14, 16),                  # Kaki kanan
+]
+
+# Keypoint yang tidak ditampilkan (kepala tidak relevan untuk push-up)
+SKIP_KEYPOINTS = {0, 1, 2, 3, 4}  # hidung, mata, telinga
+
+# Warna keypoint per bagian tubuh
+KEYPOINT_COLORS = [
+    (255, 255, 0),   # 0  - hidung
+    (255, 200, 0),   # 1  - mata kiri
+    (255, 200, 0),   # 2  - mata kanan
+    (255, 150, 0),   # 3  - telinga kiri
+    (255, 150, 0),   # 4  - telinga kanan
+    (0, 255, 100),   # 5  - bahu kiri
+    (0, 255, 100),   # 6  - bahu kanan
+    (0, 200, 255),   # 7  - siku kiri
+    (0, 200, 255),   # 8  - siku kanan
+    (0, 100, 255),   # 9  - pergelangan kiri
+    (0, 100, 255),   # 10 - pergelangan kanan
+    (200, 0, 255),   # 11 - pinggul kiri
+    (200, 0, 255),   # 12 - pinggul kanan
+    (150, 0, 200),   # 13 - lutut kiri
+    (150, 0, 200),   # 14 - lutut kanan
+    (100, 0, 150),   # 15 - pergelangan kaki kiri
+    (100, 0, 150),   # 16 - pergelangan kaki kanan
+]
+
+def draw_skeleton(frame, keypoints, conf_threshold=0.5):
+    """
+    Menggambar skeleton (keypoint + garis koneksi) dari hasil model pose.
+    Hanya keypoint dengan confidence di atas threshold yang ditampilkan.
+    """
+    if keypoints is None or len(keypoints) == 0:
+        return frame
+
+    for person_kp in keypoints:
+        kp_xy   = person_kp.xy[0]    # shape [17, 2]
+        kp_conf = person_kp.conf[0]  # shape [17]
+
+        # Gambar garis koneksi lebih dulu (agar titik di atas garis)
+        for (p1_idx, p2_idx) in SKELETON_CONNECTIONS:
+            c1 = float(kp_conf[p1_idx])
+            c2 = float(kp_conf[p2_idx])
+            if c1 > conf_threshold and c2 > conf_threshold:
+                x1, y1 = int(kp_xy[p1_idx][0]), int(kp_xy[p1_idx][1])
+                x2, y2 = int(kp_xy[p2_idx][0]), int(kp_xy[p2_idx][1])
+                if x1 > 0 and y1 > 0 and x2 > 0 and y2 > 0:
+                    cv2.line(frame, (x1, y1), (x2, y2), (0, 220, 255), 2, cv2.LINE_AA)
+
+        # Gambar titik keypoint (skip mata & telinga)
+        for i, (x, y) in enumerate(kp_xy):
+            if i in SKIP_KEYPOINTS:
+                continue
+            conf = float(kp_conf[i])
+            if conf > conf_threshold and x > 0 and y > 0:
+                color = KEYPOINT_COLORS[i] if i < len(KEYPOINT_COLORS) else (255, 255, 255)
+                cv2.circle(frame, (int(x), int(y)), 5, color, -1, cv2.LINE_AA)
+                cv2.circle(frame, (int(x), int(y)), 6, (255, 255, 255), 1, cv2.LINE_AA)  # Outline putih
+
+    return frame
 
 fsm = RepFSM()
 
@@ -276,6 +350,11 @@ def analyze():
             result = results[0]
             
             annotated_frame = img.copy()
+
+            # --- Gambar skeleton dari model pose ---
+            pose_results = pose_model(img, verbose=False)
+            if len(pose_results) > 0 and pose_results[0].keypoints is not None:
+                draw_skeleton(annotated_frame, pose_results[0].keypoints)
             
             if result.boxes is not None and len(result.boxes.cls) > 0:
                 valid_indices = [i for i, cls in enumerate(result.boxes.cls) if int(cls.item()) in [0, 1, 2]]
@@ -287,12 +366,16 @@ def analyze():
                     class_names = {0: 'down', 1: 'in_between', 2: 'up'}
                     detected_class = class_names[detected_class_idx]
                     
+                    # Warna bounding box per kelas
+                    box_colors = {'down': (0, 0, 255), 'in_between': (0, 255, 255), 'up': (0, 255, 0)}
+                    box_color = box_colors.get(detected_class, (0, 255, 0))
+
                     xyxy = result.boxes.xyxy[max_conf_idx]
                     x1, y1, x2, y2 = int(xyxy[0].item()), int(xyxy[1].item()), int(xyxy[2].item()), int(xyxy[3].item())
-                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), box_color, 2)
                     
                     label = f"{detected_class.upper()} {confidence:.2f}"
-                    cv2.putText(annotated_frame, label, (x1, max(10, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    cv2.putText(annotated_frame, label, (x1, max(10, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, box_color, 2)
                     
                     xywh = result.boxes.xywh[max_conf_idx]
                     y_center = float(xywh[1].item())
@@ -368,10 +451,15 @@ def analyze_video():
                 
             current_timestamp = frame_idx / fps
             
-            results = model(frame)
+            results = model(frame, verbose=False)
             if len(results) > 0:
                 result = results[0]
                 annotated_frame = frame.copy()
+
+                # --- Gambar skeleton dari model pose ---
+                pose_results = pose_model(frame, verbose=False)
+                if len(pose_results) > 0 and pose_results[0].keypoints is not None:
+                    draw_skeleton(annotated_frame, pose_results[0].keypoints)
                 
                 if result.boxes is not None and len(result.boxes.cls) > 0:
                     valid_indices = [i for i, cls in enumerate(result.boxes.cls) if int(cls.item()) in [0, 1, 2]]
@@ -382,13 +470,17 @@ def analyze_video():
                         
                         class_names = {0: 'down', 1: 'in_between', 2: 'up'}
                         detected_class = class_names[detected_class_idx]
+
+                        # Warna bounding box per kelas
+                        box_colors = {'down': (0, 0, 255), 'in_between': (0, 255, 255), 'up': (0, 255, 0)}
+                        box_color = box_colors.get(detected_class, (0, 255, 0))
                         
                         xyxy = result.boxes.xyxy[max_conf_idx]
                         x1, y1, x2, y2 = int(xyxy[0].item()), int(xyxy[1].item()), int(xyxy[2].item()), int(xyxy[3].item())
-                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), box_color, 2)
                         
                         label = f"{detected_class.upper()} {confidence:.2f}"
-                        cv2.putText(annotated_frame, label, (x1, max(10, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                        cv2.putText(annotated_frame, label, (x1, max(10, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, box_color, 2)
                         
                         xywh = result.boxes.xywh[max_conf_idx]
                         y_center = float(xywh[1].item())
