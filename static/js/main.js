@@ -288,7 +288,6 @@ updateAudioUI();
 //  SESSION MANAGER  — tracking sesi aktif
 // ============================================================
 let session = {
-  sessionId: null, // Dari DB
   startTime: null,
   setType: 'standard',
   target: 15,
@@ -321,7 +320,6 @@ async function sessionStart() {
     const data = await res.json();
     if (res.ok) {
       session = {
-        sessionId:      data.session_id,
         startTime:      Date.now(),
         setType:        setTypeVal,
         target:         parseInt(targetVal) || 15,
@@ -370,21 +368,20 @@ function sessionUpdate(result) {
 }
 
 async function sessionSave() {
-  if (!session.sessionId) return;
+  if (!session.startTime) return;
 
   try {
     const res = await fetch('/end_session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        session_id: session.sessionId,
         total_reps: session.totalReps,
         sets_completed: session.setsCompleted,
         incomplete_reps: session.incompleteReps
       })
     });
     if (res.ok) {
-      session.sessionId = null; // Tandai sudah disimpan
+      session.startTime = null; // Tandai sudah disimpan
       renderHistoryPanel();
     }
   } catch (err) {
@@ -439,6 +436,10 @@ function buildHistoryCard(record, compact = true) {
        </div>`
     : '';
 
+  const statusBadge = record.status === 'Tercapai'
+    ? `<span class="history-badge good">\u2714 Tercapai</span>`
+    : `<span class="history-badge warning">\u2716 Tidak Tercapai</span>`;
+
   return `
     <div class="history-card">
       <div class="flex items-start justify-between gap-2">
@@ -452,6 +453,7 @@ function buildHistoryCard(record, compact = true) {
         </div>
       </div>
       <div class="flex items-center gap-2 mt-2 flex-wrap">
+        ${statusBadge}
         ${formBadge}
         <span class="history-badge neutral">${record.setsCompleted} set</span>
       </div>
@@ -481,7 +483,7 @@ async function renderHistoryPanel() {
   }
 
   historyEmpty.classList.add('hidden');
-  const recent = history.slice(0, 3);
+  const recent = history.slice(0, 6);
   historyList.innerHTML = recent.map(r => buildHistoryCard(r, true)).join('');
 }
 

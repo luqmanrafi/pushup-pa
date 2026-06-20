@@ -20,5 +20,6 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
     jumlah_set_dicapai INT DEFAULT 0,
     total_reps_dicapai INT DEFAULT 0,
     gerakan_salah INT DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'Tidak Tercapai',
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

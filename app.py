@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import datetime
+from datetime import timedelta
 import base64
 import uuid
 from flask import Flask, request, jsonify, render_template, send_from_directory, session
@@ -17,6 +18,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'default_secret_key')
+app.permanent_session_lifetime = timedelta(hours=1)
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -154,6 +156,7 @@ def login():
     conn.close()
 
     if user and check_password_hash(user['password'], password):
+        session.permanent = True
         session['user_id'] = user['id']
         session['username'] = user['username']
         return jsonify({'message': 'Login berhasil', 'username': user['username']})
@@ -183,37 +186,22 @@ def start_session():
     data = request.json
     target = data.get('target', 15)
     set_type = data.get('set_type', 'standard')
-    
-    conn = get_db_connection()
-    if not conn:
-        return jsonify({'error': 'Database tidak terhubung'}), 500
 
-    waktu_mulai = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    tanggal_latihan = datetime.datetime.now().strftime('%Y-%m-%d')
-    user_id = session['user_id']
-
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO workout_sessions 
-        (user_id, tanggal_latihan, waktu_mulai, tipe_set, target_repetisi) 
-        VALUES (%s, %s, %s, %s, %s)
-    """, (user_id, tanggal_latihan, waktu_mulai, set_type, target))
-    
-    conn.commit()
-    session_id = cursor.lastrowid
-    cursor.close()
-    conn.close()
-
-    # Reset FSM
     try:
         target = int(target)
     except ValueError:
         target = 15
+
+    # Simpan waktu mulai di Flask session, BUKAN di database
+    session['workout_start'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    session['workout_set_type'] = set_type
+    session['workout_target'] = target
+
+    # Reset FSM
     fsm.reset(target, set_type)
 
     return jsonify({
         'message': 'Sesi dimulai', 
-        'session_id': session_id,
         'target': target,
         'set_type': set_type
     })
@@ -224,40 +212,52 @@ def end_session():
         return jsonify({'error': 'Harus login terlebih dahulu'}), 401
 
     data = request.json
-    session_id = data.get('session_id')
     total_reps = data.get('total_reps', 0)
     sets_completed = data.get('sets_completed', 0)
     incomplete_reps = data.get('incomplete_reps', 0)
-    
-    if not session_id:
-        return jsonify({'error': 'Session ID tidak diberikan'}), 400
+
+    # Jangan simpan ke database jika tidak ada aktivitas
+    if total_reps == 0 and incomplete_reps == 0:
+        session.pop('workout_start', None)
+        session.pop('workout_set_type', None)
+        session.pop('workout_target', None)
+        return jsonify({'message': 'Sesi tanpa aktivitas, tidak disimpan'})
+
+    waktu_mulai = session.get('workout_start')
+    set_type = session.get('workout_set_type', 'standard')
+    target = session.get('workout_target', 15)
+
+    if not waktu_mulai:
+        return jsonify({'error': 'Tidak ada sesi aktif'}), 400
 
     conn = get_db_connection()
     if not conn:
         return jsonify({'error': 'Database tidak terhubung'}), 500
 
     waktu_selesai = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    tanggal_latihan = waktu_mulai[:10]
     user_id = session['user_id']
 
+    # Tentukan status: tercapai jika total_reps >= target
+    status = 'Tercapai' if total_reps >= target else 'Tidak Tercapai'
+
     cursor = conn.cursor()
-    # Pastikan sesi milik user yang bersangkutan
-    if total_reps == 0 and incomplete_reps == 0:
-        # Jika tidak ada gerakan yang dicapai sama sekali, hapus record (sesi batal)
-        cursor.execute("DELETE FROM workout_sessions WHERE id = %s AND user_id = %s", (session_id, user_id))
-    else:
-        cursor.execute("""
-            UPDATE workout_sessions 
-            SET waktu_selesai = %s, total_reps_dicapai = %s, jumlah_set_dicapai = %s, gerakan_salah = %s
-            WHERE id = %s AND user_id = %s
-        """, (waktu_selesai, total_reps, sets_completed, incomplete_reps, session_id, user_id))
-    
+    cursor.execute("""
+        INSERT INTO workout_sessions 
+        (user_id, tanggal_latihan, waktu_mulai, waktu_selesai, tipe_set, target_repetisi,
+         jumlah_set_dicapai, total_reps_dicapai, gerakan_salah, status) 
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (user_id, tanggal_latihan, waktu_mulai, waktu_selesai, set_type, target,
+          sets_completed, total_reps, incomplete_reps, status))
+
     conn.commit()
-    rows_affected = cursor.rowcount
     cursor.close()
     conn.close()
 
-    if rows_affected == 0:
-        return jsonify({'error': 'Sesi tidak ditemukan atau tidak ada akses'}), 404
+    # Bersihkan session workout data
+    session.pop('workout_start', None)
+    session.pop('workout_set_type', None)
+    session.pop('workout_target', None)
 
     return jsonify({'message': 'Sesi diakhiri dan disimpan'})
 
@@ -274,8 +274,8 @@ def get_history():
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
         SELECT * FROM workout_sessions 
-        WHERE user_id = %s AND waktu_selesai IS NOT NULL
-        ORDER BY waktu_selesai DESC LIMIT 50
+        WHERE user_id = %s
+        ORDER BY waktu_mulai DESC LIMIT 50
     """, (user_id,))
     
     history = cursor.fetchall()
@@ -292,13 +292,14 @@ def get_history():
         
         formatted_history.append({
             'id': row['id'],
-            'date': row['waktu_selesai'].isoformat(),
+            'date': (row['waktu_selesai'] or row['waktu_mulai']).isoformat(),
             'setType': row['tipe_set'],
             'target': row['target_repetisi'],
             'totalReps': row['total_reps_dicapai'],
             'setsCompleted': row['jumlah_set_dicapai'],
             'incompleteReps': row['gerakan_salah'],
-            'durationSeconds': durasi
+            'durationSeconds': durasi,
+            'status': row.get('status', 'Tidak Tercapai')
         })
 
     return jsonify(formatted_history)
